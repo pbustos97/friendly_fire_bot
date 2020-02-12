@@ -31,7 +31,7 @@ async def tk(attacker, target, ffDict, clientId, message, channel):
     
 
 # gets total friendly fire incidents of attacker
-async def ff(attacker, ffDict, message, channel):
+async def _total(attacker, ffDict, message, channel):
     totalList = ffDict.values()
     total = 0
     for number in totalList:
@@ -85,7 +85,7 @@ async def on_message(message):
                     np.save(attackerId, ffDictBase)
                     ffDict = np.load(attackerId).item()
                 if victimList[0] == 'total':
-                    await ff(attacker, ffDict, message, channel)
+                    await _total(attacker, ffDict, message, channel)
                 elif victimList[0] != 'total':
                     for victim in victimList:
                         await tk(str(attacker.name), str(victim), ffDict, attackerId, message, channel)
@@ -94,7 +94,7 @@ async def on_message(message):
 
         # adds total times of tk for message sender
         elif msg[0] == '!total':
-            await ff(message.author, ffDict, message, channel)
+            await _total(message.author, ffDict, message, channel)
 
         # ranks by lowest amount of tk per server
         elif msg[0] == '!leaderboard' or msg[0] == '!lb':
