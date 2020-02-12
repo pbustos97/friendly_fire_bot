@@ -17,15 +17,13 @@ bot = commands.Bot(command_prefix=commands.when_mentioned_or('$'), description='
 async def tk(attacker, target, ffDict, clientId, message, channel):
     msg = ''
     if target in ffDict:
-        tk = target
-        ffCounter = ffDict.get(tk)
+        ffCounter = ffDict.get(target)
         ffCounter += 1
-        ffDict[tk] = ffCounter
-        msg = attacker + ' attacked ' + tk + ' ' + str(ffCounter) + ' times'
+        ffDict[target] = ffCounter
+        msg = attacker + ' attacked ' + target + ' ' + str(ffCounter) + ' times'
     elif target not in ffDict:
-        newTk = target
-        ffDict[newTk] = 1
-        msg = attacker + ' attacked ' + newTk + ' 1 time'
+        ffDict[target] = 1
+        msg = attacker + ' attacked ' + target + ' 1 time'
     np.save(clientId, ffDict)
     await channel.send(msg)
     
@@ -33,10 +31,10 @@ async def tk(attacker, target, ffDict, clientId, message, channel):
 # gets total friendly fire incidents of attacker
 async def _total(attacker, ffDict, message, channel):
     totalList = ffDict.values()
-    total = 0
+    totalTk = 0
     for number in totalList:
-        total += int(number)
-    msg = str(attacker.name) + ' has attacked teammates a total of ' + str(total) + ' times'
+        totalTk += int(number)
+    msg = str(attacker.name) + ' has attacked teammates a total of ' + str(totalTk) + ' times'
     await channel.send(msg)
 
 @bot.event
@@ -104,16 +102,15 @@ async def on_message(message):
                 if file.endswith(".npy"):
                     ffDict = np.load(str(file)).item()
                     totalList = ffDict.values()
-                    total = 0
+                    totalTk = 0
                     for number in totalList:
-                        total += int(number)
+                        totalTk += int(number)
                     try:
                         userId = str(file[:-4])
                         userId = int(userId)
                         user = bot.get_user(userId)
                         userName = bot.get_user(userId).name
-                        print(userName)
-                        leaderboard[userId] = total
+                        leaderboard[userId] = totalTk
                     except:
                         print('no user error on ' + str(userId))
             counter = 1
