@@ -14,20 +14,23 @@ from friendlyfire_bot_id import friendlyfire_bot_token
 bot = commands.Bot(command_prefix=commands.when_mentioned_or('$'), description='User Command Bot')
 
 # adds friendly fire count to attacker
-async def tk(attacker, target, ffDict, clientId, message, channel):
+async def tk(attacker, target, ffDict, clientId, message, channel, count=1):
     msg = ''
     if target in ffDict:
         ffCounter = ffDict.get(target)
-        ffCounter += 1
+        ffCounter += count
         ffDict[target] = ffCounter
         msg = attacker + ' attacked ' + target + ' ' + str(ffCounter) + ' times'
     elif target not in ffDict:
-        ffDict[target] = 1
-        msg = attacker + ' attacked ' + target + ' 1 time'
+        ffDict[target] = count
+        msg = attacker + ' attacked ' + target + ' ' + str(count)
+        if count == 1:
+            msg += ' time'
+        else:
+            msg += ' times'
     np.save(clientId, ffDict)
     await channel.send(msg)
     
-
 # gets total friendly fire incidents of attacker
 async def _total(attacker, ffDict, message, channel):
     totalList = ffDict.values()
@@ -52,7 +55,7 @@ async def on_message(message):
             print('Creating new file for ' + clientId)
             ffDictBase = {'test':0}
             np.save(clientId, ffDictBase)
-            ffDict = np.load(clientId).item()
+            ffDict = np.load(clientId, allow_pickle=True).item()
 
         msg = message.content.split()
 
@@ -60,8 +63,14 @@ async def on_message(message):
         if msg[0] == '!tk':
             if len(msg) > 1:
                 msg = msg[1:]
-                for target in msg:
-                    await tk(message.author.name, str(target), ffDict, clientId, message, channel)
+                if len(msg) > 1:
+                    if msg[1].isdigit():
+                        await tk(message.author.name, str(msg[0]), ffDict, clientId, message, channel, int(msg[1]))
+                    elif msg[0].isdigit():
+                        await tk(message.author.name, str(msg[1]), ffDict, clientId, message, channel, int(msg[0]))
+                else:
+                    for target in msg:
+                        await tk(message.author.name, str(target), ffDict, clientId, message, channel)
             else:
                 await channel.send('Who did you attack?')
 
@@ -81,12 +90,22 @@ async def on_message(message):
                     print('Creating new file for ' + attackerId)
                     ffDictBase = {'test':0}
                     np.save(attackerId, ffDictBase)
-                    ffDict = np.load(attackerId).item()
+                    ffDict = np.load(attackerId, allow_pickle=True).item()
                 if victimList[0] == 'total':
                     await _total(attacker, ffDict, message, channel)
                 elif victimList[0] != 'total':
-                    for victim in victimList:
-                        await tk(str(attacker.name), str(victim), ffDict, attackerId, message, channel)
+                    msg = victimList
+                    print(msg)
+                    if len(msg) > 1:
+                        if msg[1].isdigit():
+                            await tk(attacker.name, str(msg[0]), ffDict, attackerId, message, channel, int(msg[1]))
+                        elif msg[0].isdigit():
+                            await tk(attacker.name, str(msg[1]), ffDict, attackerId, message, channel, int(msg[0]))
+                    else:
+                        for target in msg:
+                            await tk(attacker.name, str(target), ffDict, clientId, message, channel)
+                else:
+                    await channel.send('Who did ' + str(attacker.name) + ' attack?')
             else:
                 await channel.send('Only 1 person can be mentioned')
 
@@ -100,7 +119,7 @@ async def on_message(message):
             leaderboard = {}
             for file in os.listdir(os.getcwd()):
                 if file.endswith(".npy"):
-                    ffDict = np.load(str(file)).item()
+                    ffDict = np.load(str(file), allow_pickle=True).item()
                     totalList = ffDict.values()
                     totalTk = 0
                     for number in totalList:
