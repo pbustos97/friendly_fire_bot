@@ -1,143 +1,162 @@
 #!/usr/bin/python
 import sys
 import os
-import string
-import collections
-import operator
 import asyncio
 import discord
 import numpy as np
 from discord.ext import commands
 from friendlyfire_bot_id import friendlyfire_bot_token
 
-# changed description
-bot = commands.Bot(command_prefix=commands.when_mentioned_or('$'), description='User Command Bot')
+bot = commands.Bot(command_prefix=commands.when_mentioned_or('$'), description='Friendly Fire Counter Bot')
 
-# adds friendly fire count to attacker
-async def tk(attacker, target, ffDict, clientId, message, channel, count=1):
-    msg = ''
-    if target in ffDict:
-        ffCounter = ffDict.get(target)
-        ffCounter += count
-        ffDict[target] = ffCounter
-        msg = attacker + ' attacked ' + target + ' ' + str(ffCounter) + ' times'
-    elif target not in ffDict:
-        ffDict[target] = count
-        msg = attacker + ' attacked ' + target + ' ' + str(count)
-        if count == 1:
-            msg += ' time'
+def loadFile(attacker):
+    attackerId = str(attacker.id) + '.npy'
+    try:
+        dictionary = np.load(attackerId, allow_pickle=True).item()
+        print(attackerId + ' file loaded')
+    except:
+        print('Client ' + attackerId + ' does not have a friendly fire dictionary file yet')
+        print('Creating new file for ' + attackerId)
+        dictionaryBase = {'NULL':0}
+        np.save(attackerId, dictionaryBase)
+        dictionary = np.load(attackerId, allow_pickle=True).item()
+    return dictionary
+
+# adds friendly fire count to attacker and victim
+def friendlyFireMain(message):
+    mentions = message.mentions
+    author = message.author
+    msg = message.content.split()
+    if len(msg) == 1:
+        return 'Command needs an attacker and victim'
+    msg = msg[1:]
+    if len(mentions) == 0:
+        attacker = author
+        dictionary = loadFile(attacker)
+        attackerId = str(attacker.id) + '.npy'
+        if len(msg) > 1:
+            if msg[0].isdigit():
+                return friendlyFireCounter(attacker, msg[1], dictionary, attackerId, msg[0])
+            elif msg[1].isdigit():
+                return friendlyFireCounter(attacker, msg[0], dictionary, attackerId, msg[1])
+            else:
+                compilation = ''
+                for victim in msg:
+                    compilation += friendlyFireCounter(attacker, victim, dictionary, attackerId)
+                return compilation
         else:
-            msg += ' times'
-    np.save(clientId, ffDict)
-    await channel.send(msg)
-    
-# gets total friendly fire incidents of attacker
-async def _total(attacker, ffDict, message, channel):
-    totalList = ffDict.values()
+            return friendlyFireCounter(attacker, msg[0], dictionary, attackerId)
+    else:
+        msg = msg[1:]
+        if len(mentions) > 1:
+            return 'Only 1 person can be mentioned'
+        else:
+            attacker = mentions[0]
+            dictionary = loadFile(attacker)
+            attackerId = str(attacker.id) + '.npy'
+            if len(msg) > 1:
+                if msg[0].isdigit():
+                    return friendlyFireCounter(attacker, msg[1], dictionary, attackerId, msg[0])
+                elif msg[1].isdigit():
+                    return friendlyFireCounter(attacker, msg[0], dictionary, attackerId, msg[1])
+                else:
+                    compilation = ''
+                    for victim in msg:
+                        compilation += friendlyFireCounter(attacker, victim, dictionary, attackerId)
+                    return compilation
+            else:
+                return friendlyFireCounter(attacker, msg[0], dictionary, attackerId)
+
+# adds friendly fire count to attacker and returns string of incidients for victim
+def friendlyFireCounter(attacker, victim, victimDictionary, attackerId, count=1):
+    count = int(count)
+    msg = ''
+    if victim in victimDictionary:
+        ffCounter = victimDictionary.get(victim)
+        ffCounter += count
+        victimDictionary[victim] = ffCounter
+        msg = '%s attacked %s %s' % (attacker.name, victim, ffCounter)
+    elif victim not in victimDictionary:
+        victimDictionary[victim] = count
+        msg = '%s attacked %s %s' % (attacker.name, victim, count)
+    if count == 1:
+        msg += ' time\n'
+    elif count > 1:
+        msg += ' times\n'
+    np.save(attackerId, victimDictionary)
+    return msg
+
+# returns string of total friendly fire incidents of attacker
+def friendlyFireTotal(attacker, victimDictionary):
+    totalList = victimDictionary.values()
     totalTk = 0
     for number in totalList:
         totalTk += int(number)
-    msg = str(attacker.name) + ' has attacked teammates a total of ' + str(totalTk) + ' times'
-    await channel.send(msg)
+    msg = '%s has attacked teammates a total of %s' % (str(attacker.name), str(totalTk))
+    if totalTk == 1:
+        msg += ' time'
+    elif totalTk > 1:
+        msg += ' times'
+    return msg
+
+# sends a leaderboard of lowest incidents to highest incidents on discord
+def leaderboard():
+    msg = '```\n'
+    leaderboard = {}
+    for file in os.listdir(os.getcwd()):
+        if file.endswith(".npy"):
+            dictionary = np.load(str(file), allow_pickle=True).item()
+            tkList = dictionary.values()
+            totalTk = 0
+            for number in tkList:
+                totalTk += int(number)
+            # if userName cannot be found
+            try:
+                userId = str(file[:-4])
+                userId = int(userId)
+                user = bot.get_user(userId)
+                userName = bot.get_user(userId).name
+                leaderboard[userId] = totalTk
+            except:
+                print('no user error on %s' % (str(userId)))
+    counter = 1
+    for attacker in sorted(leaderboard.keys(), key=lambda x:leaderboard[x]):
+        msg += '%s) %s attacked teammates %s' % (str(counter), bot.get_user(attacker).name, leaderboard[attacker])
+        if leaderboard[attacker] == 1:
+            msg += ' time\n'
+        elif leaderboard[attacker] > 1:
+            msg += ' times\n'
+        counter += 1
+    msg += '\n```'
+    return msg
+
+async def dispatch(function, message):
+    msg = ''
+    func = DISPATCH[function]
+    author = message.author
+    mentions = message.mentions
+    if func == friendlyFireMain:
+        msg = func(message)
+    if func == friendlyFireTotal:
+        msg = func(author, loadFile(author))
+    if func == leaderboard:
+        msg = func()
+    await message.channel.send(msg)
+
+DISPATCH = {
+    '!tk'           : friendlyFireMain,
+    '!total'        : friendlyFireTotal,
+    '!leaderboard'  : leaderboard
+}
 
 @bot.event
 async def on_message(message):
-    if message.author != bot.user:
-        clientId = str(message.author.id) + '.npy'
-        channel = message.channel
+    if message.author == bot.user or message.author.bot:
+        return
+    msg = message.content.split()
+    function = msg[0]
+    await dispatch(function, message)
 
-        # Does not work if np.load(clientId).item() doesn't exist
-        try:
-            ffDict = np.load(clientId, allow_pickle=True).item()
-            print(clientId + ' file loaded')
-        except:
-            print('Client ' + clientId + ' does not have friendly fire dictionary file yet')
-            print('Creating new file for ' + clientId)
-            ffDictBase = {'test':0}
-            np.save(clientId, ffDictBase)
-            ffDict = np.load(clientId, allow_pickle=True).item()
-
-        msg = message.content.split()
-
-        # add tk counts to self
-        if msg[0] == '!tk':
-            if len(msg) > 1:
-                msg = msg[1:]
-                if len(msg) > 1:
-                    if msg[1].isdigit():
-                        await tk(message.author.name, str(msg[0]), ffDict, clientId, message, channel, int(msg[1]))
-                    elif msg[0].isdigit():
-                        await tk(message.author.name, str(msg[1]), ffDict, clientId, message, channel, int(msg[0]))
-                else:
-                    for target in msg:
-                        await tk(message.author.name, str(target), ffDict, clientId, message, channel)
-            else:
-                await channel.send('Who did you attack?')
-
-
-        # add tk counts to other players
-        # Mention = attacker, text = victim / total
-        elif msg[0] == '!ff':
-            if len(message.mentions) == 1:
-                attacker = message.mentions[0]
-                attackerId = str(attacker.id) + '.npy'
-                victimList = msg[2:]
-                try:
-                    ffDict = np.load(attackerId, allow_pickle=True).item()
-                    print(attackerId + ' file loaded')
-                except:
-                    print('Client ' + attackerId + ' does not have friendly fire dictionary file yet')
-                    print('Creating new file for ' + attackerId)
-                    ffDictBase = {'test':0}
-                    np.save(attackerId, ffDictBase)
-                    ffDict = np.load(attackerId, allow_pickle=True).item()
-                if victimList[0] == 'total':
-                    await _total(attacker, ffDict, message, channel)
-                elif victimList[0] != 'total':
-                    msg = victimList
-                    print(msg)
-                    if len(msg) > 1:
-                        if msg[1].isdigit():
-                            await tk(attacker.name, str(msg[0]), ffDict, attackerId, message, channel, int(msg[1]))
-                        elif msg[0].isdigit():
-                            await tk(attacker.name, str(msg[1]), ffDict, attackerId, message, channel, int(msg[0]))
-                    else:
-                        for target in msg:
-                            await tk(attacker.name, str(target), ffDict, clientId, message, channel)
-                else:
-                    await channel.send('Who did ' + str(attacker.name) + ' attack?')
-            else:
-                await channel.send('Only 1 person can be mentioned')
-
-        # adds total times of tk for message sender
-        elif msg[0] == '!total':
-            await _total(message.author, ffDict, message, channel)
-
-        # ranks by lowest amount of tk per server
-        elif msg[0] == '!leaderboard' or msg[0] == '!lb':
-            msg = '```\n'
-            leaderboard = {}
-            for file in os.listdir(os.getcwd()):
-                if file.endswith(".npy"):
-                    ffDict = np.load(str(file), allow_pickle=True).item()
-                    totalList = ffDict.values()
-                    totalTk = 0
-                    for number in totalList:
-                        totalTk += int(number)
-                    try:
-                        userId = str(file[:-4])
-                        userId = int(userId)
-                        user = bot.get_user(userId)
-                        userName = bot.get_user(userId).name
-                        leaderboard[userId] = totalTk
-                    except:
-                        print('no user error on ' + str(userId))
-            counter = 1
-            for attacker in sorted(leaderboard.keys(), key=lambda x:leaderboard[x]):
-                msg += str(counter) + ') ' + '%s attacked teammates %s times \n' % (bot.get_user(attacker).name, leaderboard[attacker])
-                counter += 1
-            msg += '\n```'
-            await channel.send(msg)
 
 @bot.event
 async def on_ready():
