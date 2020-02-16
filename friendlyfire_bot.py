@@ -124,7 +124,7 @@ def leaderboard():
         msg += '%s) %s attacked teammates %s' % (str(counter), bot.get_user(attacker).name, leaderboard[attacker])
         if leaderboard[attacker] == 1:
             msg += ' time\n'
-        elif leaderboard[attacker] > 1:
+        elif leaderboard[attacker] > 1 or leaderboard[attacker] == 0:
             msg += ' times\n'
         counter += 1
     msg += '\n```'
