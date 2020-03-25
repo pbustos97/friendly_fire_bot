@@ -36,9 +36,11 @@ def friendlyFireMain(message):
         attackerId = str(attacker.id) + '.npy'
         if len(msg) > 1:
             if msg[0].isdigit():
-                return friendlyFireCounter(attacker, msg[1], dictionary, attackerId, msg[0])
+                count = msg[0]
+                return friendlyFireCounter(attacker, msg[1], dictionary, attackerId, count)
             elif msg[1].isdigit():
-                return friendlyFireCounter(attacker, msg[0], dictionary, attackerId, msg[1])
+                count = msg[1]
+                return friendlyFireCounter(attacker, msg[0], dictionary, attackerId, count)
             else:
                 compilation = ''
                 for victim in msg:
@@ -56,9 +58,11 @@ def friendlyFireMain(message):
             attackerId = str(attacker.id) + '.npy'
             if len(msg) > 1:
                 if msg[0].isdigit():
-                    return friendlyFireCounter(attacker, msg[1], dictionary, attackerId, msg[0])
+                    count = msg[0]
+                    return friendlyFireCounter(attacker, msg[1], dictionary, attackerId, count)
                 elif msg[1].isdigit():
-                    return friendlyFireCounter(attacker, msg[0], dictionary, attackerId, msg[1])
+                    count = msg[1]
+                    return friendlyFireCounter(attacker, msg[0], dictionary, attackerId, count)
                 else:
                     compilation = ''
                     for victim in msg:
@@ -94,9 +98,17 @@ def friendlyFireTotal(attacker, victimDictionary):
         totalTk += int(number)
     msg = '%s has attacked teammates a total of %s' % (str(attacker.name), str(totalTk))
     if totalTk == 1:
-        msg += ' time'
+        msg += ' time\n'
     elif totalTk > 1:
-        msg += ' times'
+        msg += ' times\n'
+    msg += '```\n'
+    for person in victimDictionary.keys():
+        msg += '%s has been attacked %s ' % (str(person), str(victimDictionary[str(person)]))
+        if victimDictionary[str(person)] == 1:
+            msg += 'time\n'
+        else:
+            msg += 'times\n'
+    msg += '```'
     return msg
 
 # sends a leaderboard of lowest incidents to highest incidents on discord
@@ -130,6 +142,64 @@ def leaderboard():
     msg += '\n```'
     return msg
 
+# Allows forgiveness 
+def friendlyFireForgive(message):
+    mentions = message.mentions
+    author = message.author
+    msg = message.content.split()
+    if len(msg) == 1 or len(msg) == 2:
+        return 'Command needs a victim of TK and an attacker (tagged)'
+    msg = msg[1:]
+    if len(mentions) == 0:
+        attacker = author
+        dictionary = loadFile(attacker)
+        attackerId = str(attacker.id) + '.npy'
+        if len(msg) > 1:
+            if msg[0].isdigit():
+                count = msg[0] * -1
+                return friendlyFireCounter(attacker, msg[1], dictionary, attackerId, count)
+            elif msg[1].isdigit():
+                count = msg[1] * -1
+                return friendlyFireCounter(attacker, msg[0], dictionary, attackerId, count)
+            else:
+                compilation = ''
+                for victim in msg:
+                    compilation += friendlyFireCounter(attacker, victim, dictionary, attackerId, -1)
+                return compilation
+        else:
+            return friendlyFireCounter(attacker, msg[0], dictionary, attackerId, -1)
+    else:
+        msg = msg[1:]
+        if len(mentions) > 1:
+            return 'Only 1 person can be mentioned'
+        else:
+            attacker = mentions[0]
+            dictionary = loadFile(attacker)
+            attackerId = str(attacker.id) + '.npy'
+            if len(msg) > 1:
+                if msg[0].isdigit():
+                    count = msg[0] * -1
+                    return friendlyFireCounter(attacker, msg[1], dictionary, attackerId, count)
+                elif msg[1].isdigit():
+                    count = msg[1] * -1
+                    return friendlyFireCounter(attacker, msg[0], dictionary, attackerId, count)
+                else:
+                    compilation = ''
+                    for victim in msg:
+                        compilation += friendlyFireCounter(attacker, victim, dictionary, attackerId, -1)
+                    return compilation
+            else:
+                return friendlyFireCounter(attacker, msg[0], dictionary, attackerId, -1)
+
+def helpMsg():
+    msg = '```\n'
+    msg += '(!tk @attacker victim1 victim2 ...) or (!tk victim)\n'
+    msg += '!total @attacker\n'
+    msg += '!leaderboard\n'
+    msg += '!forgive @attacker victim\n'
+    msg += '```'
+    return msg
+
 async def dispatch(function, message):
     msg = ''
     func = DISPATCH[function]
@@ -141,12 +211,18 @@ async def dispatch(function, message):
         msg = func(author, loadFile(author))
     if func == leaderboard:
         msg = func()
+    if func == friendlyFireForgive:
+        msg = func(message)
+    if func == helpMsg:
+        msg = func()
     await message.channel.send(msg)
 
 DISPATCH = {
     '!tk'           : friendlyFireMain,
     '!total'        : friendlyFireTotal,
-    '!leaderboard'  : leaderboard
+    '!leaderboard'  : leaderboard,
+    '!forgive'      : friendlyFireForgive,
+    '!help'         : helpMsg
 }
 
 @bot.event
