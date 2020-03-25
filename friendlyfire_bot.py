@@ -10,11 +10,7 @@ from friendlyfire_bot_id import friendlyfire_bot_token
 
 bot = commands.Bot(command_prefix=commands.when_mentioned_or('$'), description='Friendly Fire Counter Bot')
 
-#conn = sql.connect(':memory:')
-#conn = sql.connect('friendlyFire.db')
-#c = conn.cursor()
-
-# adds friendly fire count to attacker and victim
+# Adds friendly fire count to attacker and victim
 def friendlyFireMain(message, conn, c):
     mentions = message.mentions
     if len(mentions) > 1 or len(mentions) < 1:
@@ -25,6 +21,13 @@ def friendlyFireMain(message, conn, c):
     if len(victims) == 2:
         return '!tk needs victims'
     victimList = victims[2:]
+
+    # Used if user wants to add multiple incidents at the same time for a single victim
+    if victimList[1].isdigit():
+        return friendlyFireHelper(attacker, victimList, 0, 1, conn, c)
+    elif victimList[0].isdigit():
+        return friendlyFireHelper(attacker, victimList, 1, 0, conn, c)
+
     for victim in victimList:
         with conn:
             c.execute("INSERT INTO friendlyfire VALUES(:discordId, :victim, datetime('now', 'localtime'))", {'discordId':attacker.id, 'victim':victim})
@@ -39,7 +42,27 @@ def friendlyFireMain(message, conn, c):
             msg += 'times\n'
     return msg
 
-# returns string of total friendly fire incidents of attacker
+# For the isdigit section of friendlyFireMain
+def friendlyFireHelper(attacker, victimList, x, y, conn, c):
+    count = 0
+    msg = ''
+    victim = victimList[x]
+    while count != int(victimList[y]):
+        with conn:
+            c.execute("INSERT INTO friendlyfire VALUES(:discordId, :victim, datetime('now', 'localtime'))", {'discordId':attacker.id, 'victim':victim})
+        count += 1
+    c.execute("SELECT discordId, victim, COUNT(victim) FROM friendlyFire WHERE discordId = :discordId AND victim = :victim", {'discordId':attacker.id, 'victim':victim})
+    temp = c.fetchone()
+    name = bot.get_user(attacker.id)
+    count = temp[2]
+    msg += '%s has attacked %s %s ' % (name, victim, count)
+    if count == 1:
+        msg += 'time\n'
+    else:
+        msg += 'times\n'
+    return msg
+
+# Returns string of total friendly fire incidents of attacker with most recent incident displayed first
 def friendlyFireTotal(message, conn, c):
     mentions = message.mentions
     if len(mentions) > 1 or len(mentions) < 1:
@@ -48,8 +71,10 @@ def friendlyFireTotal(message, conn, c):
     msg = '```\n'
     c.execute("SELECT discordId, victim, COUNT(victim), MAX(date) FROM friendlyFire WHERE discordId = :discordId GROUP BY victim ORDER BY date DESC", {'discordId':attacker.id})
     ffList = c.fetchall()
+    name = bot.get_user(int(attacker.id)).name
+    if not ffList:
+        return '%s has not attacked anyone yet' % (name)
     for incident in ffList:
-        name = bot.get_user(int(incident[0])).name
         victim = incident[1]
         incidents = incident[2]
         date = incident[3]
@@ -61,10 +86,12 @@ def friendlyFireTotal(message, conn, c):
     msg += '```'
     return msg
 
-# sends a leaderboard of lowest incidents to highest incidents on discord
+# Sends a leaderboard of highest incidents first
 def leaderboard(conn, c):
     c.execute("SELECT discordId, COUNT(victim) FROM friendlyFire GROUP BY discordId ORDER BY COUNT(victim) DESC")
     leaderboard = c.fetchall()
+    if not leaderboard:
+        return 'Nobody has been attacked yet on this server'
     msg = '```\n'
     counter = 0
     for attacker in leaderboard:
@@ -87,6 +114,7 @@ def assist():
     msg += '!leaderboard\n'
     msg += '```'
 
+# Removes an incident by most recent date for a victim
 def forgive(message, conn, c):
     mentions = message.mentions
     if len(mentions) > 1 or len(mentions) < 1:
@@ -126,8 +154,13 @@ DISPATCH = {
 
 @bot.event
 async def on_message(message):
-    conn = sql.connect('friendlyFire.db')
-    #conn = sql.connect(':memory:')
+    if message.author == bot.user or message.author.bot:
+        return
+
+    serverId = message.guild.id
+    database = str(serverId) + '.db'
+
+    conn = sql.connect(database)
     c = conn.cursor()
 
     try:
@@ -139,9 +172,6 @@ async def on_message(message):
     except sql.Error as error:
         print('Error with table creation: ', error)
 
-
-    if message.author == bot.user or message.author.bot:
-        return
     msg = message.content.split()
     function = msg[0]
     await dispatch(function, message, conn, c)
