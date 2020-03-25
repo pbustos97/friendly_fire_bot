@@ -113,6 +113,7 @@ def assist():
     msg += '!total @attacker\n'
     msg += '!leaderboard\n'
     msg += '```'
+    return msg
 
 # Removes an incident by most recent date for a victim
 def forgive(message, conn, c):
