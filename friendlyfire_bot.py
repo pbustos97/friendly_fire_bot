@@ -23,10 +23,11 @@ def friendlyFireMain(message, conn, c):
     victimList = victims[2:]
 
     # Used if user wants to add multiple incidents at the same time for a single victim
-    if victimList[1].isdigit():
-        return friendlyFireHelper(attacker, victimList, 0, 1, conn, c)
-    elif victimList[0].isdigit():
-        return friendlyFireHelper(attacker, victimList, 1, 0, conn, c)
+    if len(victimList) == 2:
+        if victimList[1].isdigit():
+            return friendlyFireHelper(attacker, victimList, 0, 1, conn, c)
+        elif victimList[0].isdigit():
+            return friendlyFireHelper(attacker, victimList, 1, 0, conn, c)
 
     for victim in victimList:
         with conn:
