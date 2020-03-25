@@ -4,218 +4,115 @@ import os
 import asyncio
 import discord
 import numpy as np
+import sqlite3 as sql
 from discord.ext import commands
 from friendlyfire_bot_id import friendlyfire_bot_token
 
 bot = commands.Bot(command_prefix=commands.when_mentioned_or('$'), description='Friendly Fire Counter Bot')
 
-def loadFile(attacker):
-    attackerId = str(attacker.id) + '.npy'
-    try:
-        dictionary = np.load(attackerId, allow_pickle=True).item()
-        print(attackerId + ' file loaded')
-    except:
-        print('Client ' + attackerId + ' does not have a friendly fire dictionary file yet')
-        print('Creating new file for ' + attackerId)
-        dictionaryBase = {'NULL':0}
-        np.save(attackerId, dictionaryBase)
-        dictionary = np.load(attackerId, allow_pickle=True).item()
-    return dictionary
+#conn = sql.connect(':memory:')
+#conn = sql.connect('friendlyFire.db')
+#c = conn.cursor()
 
 # adds friendly fire count to attacker and victim
-def friendlyFireMain(message):
+def friendlyFireMain(message, conn, c):
     mentions = message.mentions
-    author = message.author
-    msg = message.content.split()
-    if len(msg) == 1:
-        return 'Command needs an attacker and victim'
-    msg = msg[1:]
-    if len(mentions) == 0:
-        attacker = author
-        dictionary = loadFile(attacker)
-        attackerId = str(attacker.id) + '.npy'
-        if len(msg) > 1:
-            if msg[0].isdigit():
-                count = msg[0]
-                return friendlyFireCounter(attacker, msg[1], dictionary, attackerId, count)
-            elif msg[1].isdigit():
-                count = msg[1]
-                return friendlyFireCounter(attacker, msg[0], dictionary, attackerId, count)
-            else:
-                compilation = ''
-                for victim in msg:
-                    compilation += friendlyFireCounter(attacker, victim, dictionary, attackerId)
-                return compilation
-        else:
-            return friendlyFireCounter(attacker, msg[0], dictionary, attackerId)
-    else:
-        msg = msg[1:]
-        if len(mentions) > 1:
-            return 'Only 1 person can be mentioned'
-        else:
-            attacker = mentions[0]
-            dictionary = loadFile(attacker)
-            attackerId = str(attacker.id) + '.npy'
-            if len(msg) > 1:
-                if msg[0].isdigit():
-                    count = msg[0]
-                    return friendlyFireCounter(attacker, msg[1], dictionary, attackerId, count)
-                elif msg[1].isdigit():
-                    count = msg[1]
-                    return friendlyFireCounter(attacker, msg[0], dictionary, attackerId, count)
-                else:
-                    compilation = ''
-                    for victim in msg:
-                        compilation += friendlyFireCounter(attacker, victim, dictionary, attackerId)
-                    return compilation
-            else:
-                return friendlyFireCounter(attacker, msg[0], dictionary, attackerId)
-
-# adds friendly fire count to attacker and returns string of incidients for victim
-def friendlyFireCounter(attacker, victim, victimDictionary, attackerId, count=1):
-    count = int(count)
+    if len(mentions) > 1 or len(mentions) < 1:
+        return '!tk only accepts a single mention'
     msg = ''
-    if victim in victimDictionary:
-        ffCounter = victimDictionary.get(victim)
-        ffCounter += count
-        if ffCounter < 0:
-            return 'Cannot have negative incidents'
-        victimDictionary[victim] = ffCounter
-        msg = '%s attacked %s %s' % (attacker.name, victim, ffCounter)
-    elif victim not in victimDictionary:
-        victimDictionary[victim] = count
-        msg = '%s attacked %s %s' % (attacker.name, victim, count)
-    if count == 1:
-        msg += ' time\n'
-    else:
-        msg += ' times\n'
-    np.save(attackerId, victimDictionary)
+    attacker = mentions[0]
+    victims = message.content.split()
+    if len(victims) == 2:
+        return '!tk needs victims'
+    victimList = victims[2:]
+    for victim in victimList:
+        with conn:
+            c.execute("INSERT INTO friendlyfire VALUES(:discordId, :victim, datetime('now', 'localtime'))", {'discordId':attacker.id, 'victim':victim})
+            c.execute("SELECT discordId, victim, COUNT(victim) FROM friendlyFire WHERE discordId = :discordId AND victim = :victim", {'discordId':attacker.id, 'victim':victim})
+        temp = c.fetchone()
+        count = temp[2]
+        name = bot.get_user(attacker.id).name
+        msg += '%s has attacked %s %s ' % (name, victim, count)
+        if count == 1:
+            msg += 'time\n'
+        else:
+            msg += 'times\n'
     return msg
 
 # returns string of total friendly fire incidents of attacker
-def friendlyFireTotal(attacker, victimDictionary):
-    totalList = victimDictionary.values()
-    totalTk = 0
-    for number in totalList:
-        totalTk += int(number)
-    msg = '%s has attacked teammates a total of %s' % (str(attacker.name), str(totalTk))
-    if totalTk == 1:
-        msg += ' time\n'
-    else:
-        msg += ' times\n'
-    msg += '```\n'
-    for person in victimDictionary.keys():
-        msg += '%s has been attacked %s ' % (str(person), str(victimDictionary[str(person)]))
-        if victimDictionary[str(person)] == 1:
+def friendlyFireTotal(message, conn, c):
+    mentions = message.mentions
+    if len(mentions) > 1 or len(mentions) < 1:
+        return '!total only accepts a single mention'
+    attacker = mentions[0]
+    msg = '```\n'
+    c.execute("SELECT discordId, victim, COUNT(victim), MAX(date) FROM friendlyFire WHERE discordId = :discordId GROUP BY victim ORDER BY date DESC", {'discordId':attacker.id})
+    ffList = c.fetchall()
+    for incident in ffList:
+        name = bot.get_user(int(incident[0])).name
+        victim = incident[1]
+        incidents = incident[2]
+        date = incident[3]
+        msg += '%s attacked %s %s ' % (name, victim, str(incidents))
+        if incidents == 1:
+            msg += 'time as recently as %s Los Angeles Time\n\n' % (date)
+        else:
+            msg += 'times as recently as %s Los Angeles Time\n\n' % (date)
+    msg += '```'
+    return msg
+
+# sends a leaderboard of lowest incidents to highest incidents on discord
+def leaderboard(conn, c):
+    c.execute("SELECT discordId, COUNT(victim) FROM friendlyFire GROUP BY discordId ORDER BY COUNT(victim) DESC")
+    leaderboard = c.fetchall()
+    msg = '```\n'
+    counter = 0
+    for attacker in leaderboard:
+        counter += 1
+        name = bot.get_user(int(attacker[0])).name
+        incidents = str(attacker[1])
+        msg += '%s) %s has attacked teammates a total of %s ' % (str(counter), name, incidents)
+        if attacker[1] == 1:
             msg += 'time\n'
         else:
             msg += 'times\n'
     msg += '```'
     return msg
 
-# sends a leaderboard of lowest incidents to highest incidents on discord
-def leaderboard():
+def assist():
     msg = '```\n'
-    leaderboard = {}
-    for file in os.listdir(os.getcwd()):
-        if file.endswith(".npy"):
-            dictionary = np.load(str(file), allow_pickle=True).item()
-            tkList = dictionary.values()
-            totalTk = 0
-            for number in tkList:
-                totalTk += int(number)
-            # if userName cannot be found
-            try:
-                userId = str(file[:-4])
-                userId = int(userId)
-                user = bot.get_user(userId)
-                userName = bot.get_user(userId).name
-                leaderboard[userId] = totalTk
-            except:
-                print('no user error on %s' % (str(userId)))
-    counter = 1
-    for attacker in sorted(leaderboard.keys(), key=lambda x:leaderboard[x]):
-        msg += '%s) %s attacked teammates %s' % (str(counter), bot.get_user(attacker).name, leaderboard[attacker])
-        if leaderboard[attacker] == 1:
-            msg += ' time\n'
-        elif leaderboard[attacker] > 1 or leaderboard[attacker] == 0:
-            msg += ' times\n'
-        counter += 1
-    msg += '\n```'
-    return msg
-
-# Allows forgiveness 
-def friendlyFireForgive(message):
-    mentions = message.mentions
-    author = message.author
-    msg = message.content.split()
-    if len(msg) == 1 or len(msg) == 2:
-        return 'Command needs a victim of TK and an attacker (tagged)'
-    msg = msg[1:]
-    if len(mentions) == 0:
-        attacker = author
-        dictionary = loadFile(attacker)
-        attackerId = str(attacker.id) + '.npy'
-        if len(msg) > 1:
-            if msg[0].isdigit():
-                count = msg[0] * -1
-                return friendlyFireCounter(attacker, msg[1], dictionary, attackerId, count)
-            elif msg[1].isdigit():
-                count = msg[1] * -1
-                return friendlyFireCounter(attacker, msg[0], dictionary, attackerId, count)
-            else:
-                compilation = ''
-                for victim in msg:
-                    compilation += friendlyFireCounter(attacker, victim, dictionary, attackerId, -1)
-                return compilation
-        else:
-            return friendlyFireCounter(attacker, msg[0], dictionary, attackerId, -1)
-    else:
-        msg = msg[1:]
-        if len(mentions) > 1:
-            return 'Only 1 person can be mentioned'
-        else:
-            attacker = mentions[0]
-            dictionary = loadFile(attacker)
-            attackerId = str(attacker.id) + '.npy'
-            if len(msg) > 1:
-                if msg[0].isdigit():
-                    count = msg[0] * -1
-                    return friendlyFireCounter(attacker, msg[1], dictionary, attackerId, count)
-                elif msg[1].isdigit():
-                    count = msg[1] * -1
-                    return friendlyFireCounter(attacker, msg[0], dictionary, attackerId, count)
-                else:
-                    compilation = ''
-                    for victim in msg:
-                        compilation += friendlyFireCounter(attacker, victim, dictionary, attackerId, -1)
-                    return compilation
-            else:
-                return friendlyFireCounter(attacker, msg[0], dictionary, attackerId, -1)
-
-def helpMsg():
-    msg = '```\n'
-    msg += '(!tk @attacker victim1 victim2 ...) or (!tk victim)\n'
+    msg += '!tk @attacker victim1 victim2 victim3 ...\n'
+    msg += '!forgive @attacker victim1 victim2 victim3 ...\n'
     msg += '!total @attacker\n'
     msg += '!leaderboard\n'
-    msg += '!forgive @attacker victim\n'
     msg += '```'
-    return msg
 
-async def dispatch(function, message):
+def forgive(message, conn, c):
+    mentions = message.mentions
+    if len(mentions) > 1 or len(mentions) < 1:
+        return '!forgive only accepts a single mention'
+    attacker = mentions[0]
+    msg = message.content.split()
+    victims = msg[2:]
+    for victim in victims:
+        with conn:
+            c.execute("DELETE FROM friendlyFire WHERE discordId = :discordId and victim = :victim and date = (SELECT MAX(date) FROM friendlyFire WHERE victim = :victim AND discordId = :discordId)", {'discordId':attacker.id, 'victim':victim})
+    return friendlyFireTotal(message, conn, c)
+
+async def dispatch(function, message, conn, c):
     msg = ''
     func = DISPATCH[function]
     author = message.author
     mentions = message.mentions
     if func == friendlyFireMain:
-        msg = func(message)
+        msg = func(message, conn, c)
     if func == friendlyFireTotal:
-        msg = func(author, loadFile(author))
+        msg = func(message, conn, c)
     if func == leaderboard:
-        msg = func()
-    if func == friendlyFireForgive:
-        msg = func(message)
-    if func == helpMsg:
+        msg = func(conn, c)
+    if func == forgive:
+        msg = func(message, conn, c)
+    if func == assist:
         msg = func()
     await message.channel.send(msg)
 
@@ -223,17 +120,33 @@ DISPATCH = {
     '!tk'           : friendlyFireMain,
     '!total'        : friendlyFireTotal,
     '!leaderboard'  : leaderboard,
-    '!forgive'      : friendlyFireForgive,
-    '!help'         : helpMsg
+    '!forgive'      : forgive,
+    '!help'         : assist
 }
 
 @bot.event
 async def on_message(message):
+    conn = sql.connect('friendlyFire.db')
+    #conn = sql.connect(':memory:')
+    c = conn.cursor()
+
+    try:
+        c.execute("""CREATE TABLE friendlyFire (
+                    discordId INTEGER,
+                    victim TEXT,
+                    date TEXT
+                    )""")
+    except sql.Error as error:
+        print('Error with table creation: ', error)
+
+
     if message.author == bot.user or message.author.bot:
         return
     msg = message.content.split()
     function = msg[0]
-    await dispatch(function, message)
+    await dispatch(function, message, conn, c)
+
+    conn.close()
 
 
 @bot.event
