@@ -78,6 +78,8 @@ def friendlyFireCounter(attacker, victim, victimDictionary, attackerId, count=1)
     if victim in victimDictionary:
         ffCounter = victimDictionary.get(victim)
         ffCounter += count
+        if ffCounter < 0:
+            return 'Cannot have negative incidents'
         victimDictionary[victim] = ffCounter
         msg = '%s attacked %s %s' % (attacker.name, victim, ffCounter)
     elif victim not in victimDictionary:
@@ -85,7 +87,7 @@ def friendlyFireCounter(attacker, victim, victimDictionary, attackerId, count=1)
         msg = '%s attacked %s %s' % (attacker.name, victim, count)
     if count == 1:
         msg += ' time\n'
-    elif count > 1:
+    else:
         msg += ' times\n'
     np.save(attackerId, victimDictionary)
     return msg
@@ -99,7 +101,7 @@ def friendlyFireTotal(attacker, victimDictionary):
     msg = '%s has attacked teammates a total of %s' % (str(attacker.name), str(totalTk))
     if totalTk == 1:
         msg += ' time\n'
-    elif totalTk > 1:
+    else:
         msg += ' times\n'
     msg += '```\n'
     for person in victimDictionary.keys():
